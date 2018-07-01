@@ -8,36 +8,21 @@ var pki = require('node-forge').pki
 
 var app = express();
 
-const AUTH0_TENANT = 'leandro-pelorosso-testing-0';
-const CLIENT_ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
-const CERT = `-----BEGIN CERTIFICATE-----
-MIIEszCCA5ugAwIBAgIJAMr5XxfI9iL5MA0GCSqGSIb3DQEBBQUAMIGXMQswCQYD
-VQQGEwJDQTELMAkGA1UECBMCT04xEDAOBgNVBAcTB1Rvcm9udG8xHzAdBgNVBAoT
-FlNlY3VyZUtleSBUZWNobm9sb2dpZXMxHDAaBgNVBAMTE1ZNRSBBcHAgU2lnbmlu
-ZyBLZXkxKjAoBgkqhkiG9w0BCQEWG2Zsb3Jpbi5iaXJzYW5Ac2VjdXJla2V5LmNv
-bTAeFw0xNzAzMTMxNDUyMjNaFw0xODAzMTMxNDUyMjNaMIGXMQswCQYDVQQGEwJD
-QTELMAkGA1UECBMCT04xEDAOBgNVBAcTB1Rvcm9udG8xHzAdBgNVBAoTFlNlY3Vy
-ZUtleSBUZWNobm9sb2dpZXMxHDAaBgNVBAMTE1ZNRSBBcHAgU2lnbmluZyBLZXkx
-KjAoBgkqhkiG9w0BCQEWG2Zsb3Jpbi5iaXJzYW5Ac2VjdXJla2V5LmNvbTCCASIw
-DQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANfdtm3LgAXftjR6Za/Asmnrmrhm
-X0TCqUCRXZ2Ze4wFic1fA61ARc56mioJmfGiNE6WtBmozQ8kpR6TUaz1oOUgfmJ8
-vIDBZMIEnLJIP0tFasm6Y81CjzciTnxy6D5JChEyRFIwOCWGjoKWOSrukgRIgEAq
-4Zq5fqKYokIwNIIbv1JaaEJzo5A/zHB9IsUeEHoI2dPgx9eIGF2+WU6Ht40kSDkI
-o3D3nCELOW1pqkpuQoU041ZNzPmzEo+8Ntg3ENoM8u8fdB6dInF//V+zB6Luk3YI
-OBaUyIR8AB85TDsxbWRqyvWAjUhqa3RobJngDfsdtgwaBqGiJv5TCqeInn8CAwEA
-AaOB/zCB/DAdBgNVHQ4EFgQUVIjJqdVySn6Nzr9v0x3wvhZzlRowgcwGA1UdIwSB
-xDCBwYAUVIjJqdVySn6Nzr9v0x3wvhZzlRqhgZ2kgZowgZcxCzAJBgNVBAYTAkNB
-MQswCQYDVQQIEwJPTjEQMA4GA1UEBxMHVG9yb250bzEfMB0GA1UEChMWU2VjdXJl
-S2V5IFRlY2hub2xvZ2llczEcMBoGA1UEAxMTVk1FIEFwcCBTaWduaW5nIEtleTEq
-MCgGCSqGSIb3DQEJARYbZmxvcmluLmJpcnNhbkBzZWN1cmVrZXkuY29tggkAyvlf
-F8j2IvkwDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOCAQEAZnRTkm3sYhMx
-xPUQ1LB5jYVV3TTZIoIg2d5suqw5eL3SeF4X12wXlaKnwTzBoej4K3c4xxwR1Gwd
-sNvjY0w8XdAuw/n5+BdoOlN6MWE/O2vz8oSYzUBrq/JsWlpWbdvVsm+5d3MJJ4g4
-g1b1nDfDJZJq/t80UUzgd7yoTNeEbYj2bT7cLkFtuqG4MkjzrB/mwsR57XnPGRGC
-zY93eKixZtQtXUGFgb4Ez16ZVZ5LWk9YNH4RNDJVIh+Q1Eons5NYUB57O3Ma3t7g
-0hJcglOiWcn/pgO3y4SqvSlirsZpUF9YGUwgcOIvi/tPQ7yz6irLJrGqVtXjB8TQ
-wlXjkKt8LA==
------END CERTIFICATE-----`;
+function mockWebtaskContext(req, res, next) {
+    // Mock `req.webtaskContext` for standalone servers
+    if (!req.webtaskContext) {
+        req.webtaskContext = {
+            secrets: {
+                TENANT_DOMAIN: process.env.TENANT_DOMAIN,
+                CLIENT_ASSERTION_TYPE: process.env.CLIENT_ASSERTION_TYPE,
+                CERT: process.env.CERT,
+            }
+        };
+    }
+    next();
+}
+
+app.use(mockWebtaskContext);
 
 // These are the rules the /out/token endpoint will use to validate the query string parameters
 var tokenEndpointValidationRules = {
@@ -52,7 +37,7 @@ var tokenEndpointValidationRules = {
 	}
 }
 
-// Example: 
+// Example:
 // 		localhost:8081/oauth/token
 //			?client_id=2ZUIv0DyveQJ1F4JW1ycNLeRyC0YTVE6
 // 			&code=97ToXLLuaQo6DdKu
@@ -69,7 +54,8 @@ app.post('/oauth/token', validate(tokenEndpointValidationRules), function (req, 
 		var client_assertion = req.query.client_assertion;
 
 		// validate client assertion type (should match the one on the configuration)
-		if(CLIENT_ASSERTION_TYPE != client_assertion_type){ throw ("Invalid Assertion Type")};
+		if(req.webtaskContext.secrets.CLIENT_ASSERTION_TYPE != client_assertion_type){
+			throw ("Invalid Assertion Type")};
 
 		// decode client assertion
 		var decoded_assertion = jwt.decode(client_assertion, {complete: true});
@@ -90,7 +76,7 @@ app.post('/oauth/token', validate(tokenEndpointValidationRules), function (req, 
 
 			console.log("Using locally defined CERT to verify JWT.");
 
-			var cert = pki.certificateFromPem(CERT);
+			var cert = pki.certificateFromPem(req.webtaskContext.secrets.CERT);
 			publicKey = pki.publicKeyToPem(cert.publicKey);
 
 		} else { // we will use the JWK to verify token
@@ -112,12 +98,12 @@ app.post('/oauth/token', validate(tokenEndpointValidationRules), function (req, 
 			}
 		}
 
-		// verify the token, using client id as audience and issuer			
+		// verify the token, using client id as audience and issuer
 		jwt.verify(client_assertion, publicKey, { audience: req.query.client_id, issuer: req.query.client_id }, function(err, decoded) {
 			if(err) return next(err);
 
 			// client assertion is verified, so proceed to exchange code for token.
-			exchangeCode(req.query, function(err, response){
+			exchangeCode(req, function(err, response){
 				if(err) return next(err);
 				console.log(err);
 				console.log(response);
@@ -130,7 +116,8 @@ app.post('/oauth/token', validate(tokenEndpointValidationRules), function (req, 
 
 
 /** Performs the code exchange calling oauth/token endpoint in Auth0 **/
-function exchangeCode(params, callback){
+function exchangeCode(req, callback){
+	var params = req.query
 
 	// get parameters from query string
 	var request_body = {
@@ -142,9 +129,9 @@ function exchangeCode(params, callback){
 	};
 
 	// build the request to auth0
-	var options = { 
+	var options = {
 		method: 'POST',
-	  	url: 'https://' + AUTH0_TENANT + '.auth0.com/oauth/token',
+		url: req.webtaskContext.secrets.TENANT_DOMAIN + '/oauth/token',
 	  	headers: { 'content-type': 'application/json' },
 	  	body: request_body,
 	  	json: true
@@ -185,6 +172,7 @@ app.use(function (err, req, res, next) {
   }
   res.status(500).send({ error: err })
 });
+
 
 // Create Server
 var server = app.listen(8081, function () {
