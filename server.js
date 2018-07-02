@@ -1,47 +1,34 @@
 var express = require('express');
 var request = require("request");
-var validate = require('express-validation')
 var Joi = require('joi');
 var jwt = require('jsonwebtoken');
 var jwksClient = require('jwks-rsa');
-var pki = require('node-forge').pki
+var bodyParser = require('body-parser');
 
 var app = express();
 
-const AUTH0_TENANT = 'leandro-pelorosso-testing-0';
-const CLIENT_ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
-const CERT = `-----BEGIN CERTIFICATE-----
-MIIEszCCA5ugAwIBAgIJAMr5XxfI9iL5MA0GCSqGSIb3DQEBBQUAMIGXMQswCQYD
-VQQGEwJDQTELMAkGA1UECBMCT04xEDAOBgNVBAcTB1Rvcm9udG8xHzAdBgNVBAoT
-FlNlY3VyZUtleSBUZWNobm9sb2dpZXMxHDAaBgNVBAMTE1ZNRSBBcHAgU2lnbmlu
-ZyBLZXkxKjAoBgkqhkiG9w0BCQEWG2Zsb3Jpbi5iaXJzYW5Ac2VjdXJla2V5LmNv
-bTAeFw0xNzAzMTMxNDUyMjNaFw0xODAzMTMxNDUyMjNaMIGXMQswCQYDVQQGEwJD
-QTELMAkGA1UECBMCT04xEDAOBgNVBAcTB1Rvcm9udG8xHzAdBgNVBAoTFlNlY3Vy
-ZUtleSBUZWNobm9sb2dpZXMxHDAaBgNVBAMTE1ZNRSBBcHAgU2lnbmluZyBLZXkx
-KjAoBgkqhkiG9w0BCQEWG2Zsb3Jpbi5iaXJzYW5Ac2VjdXJla2V5LmNvbTCCASIw
-DQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANfdtm3LgAXftjR6Za/Asmnrmrhm
-X0TCqUCRXZ2Ze4wFic1fA61ARc56mioJmfGiNE6WtBmozQ8kpR6TUaz1oOUgfmJ8
-vIDBZMIEnLJIP0tFasm6Y81CjzciTnxy6D5JChEyRFIwOCWGjoKWOSrukgRIgEAq
-4Zq5fqKYokIwNIIbv1JaaEJzo5A/zHB9IsUeEHoI2dPgx9eIGF2+WU6Ht40kSDkI
-o3D3nCELOW1pqkpuQoU041ZNzPmzEo+8Ntg3ENoM8u8fdB6dInF//V+zB6Luk3YI
-OBaUyIR8AB85TDsxbWRqyvWAjUhqa3RobJngDfsdtgwaBqGiJv5TCqeInn8CAwEA
-AaOB/zCB/DAdBgNVHQ4EFgQUVIjJqdVySn6Nzr9v0x3wvhZzlRowgcwGA1UdIwSB
-xDCBwYAUVIjJqdVySn6Nzr9v0x3wvhZzlRqhgZ2kgZowgZcxCzAJBgNVBAYTAkNB
-MQswCQYDVQQIEwJPTjEQMA4GA1UEBxMHVG9yb250bzEfMB0GA1UEChMWU2VjdXJl
-S2V5IFRlY2hub2xvZ2llczEcMBoGA1UEAxMTVk1FIEFwcCBTaWduaW5nIEtleTEq
-MCgGCSqGSIb3DQEJARYbZmxvcmluLmJpcnNhbkBzZWN1cmVrZXkuY29tggkAyvlf
-F8j2IvkwDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOCAQEAZnRTkm3sYhMx
-xPUQ1LB5jYVV3TTZIoIg2d5suqw5eL3SeF4X12wXlaKnwTzBoej4K3c4xxwR1Gwd
-sNvjY0w8XdAuw/n5+BdoOlN6MWE/O2vz8oSYzUBrq/JsWlpWbdvVsm+5d3MJJ4g4
-g1b1nDfDJZJq/t80UUzgd7yoTNeEbYj2bT7cLkFtuqG4MkjzrB/mwsR57XnPGRGC
-zY93eKixZtQtXUGFgb4Ez16ZVZ5LWk9YNH4RNDJVIh+Q1Eons5NYUB57O3Ma3t7g
-0hJcglOiWcn/pgO3y4SqvSlirsZpUF9YGUwgcOIvi/tPQ7yz6irLJrGqVtXjB8TQ
-wlXjkKt8LA==
------END CERTIFICATE-----`;
+function mockWebtaskContext(req, res, next) {
+    // Mock `req.webtaskContext` for standalone servers
+    if (!req.webtaskContext) {
+        req.webtaskContext = {
+            secrets: {
+                TENANT_DOMAIN: process.env.TENANT_DOMAIN,
+                CLIENT_ASSERTION_TYPE: process.env.CLIENT_ASSERTION_TYPE,
+                CERT: process.env.CERT,
+            }
+        };
+    } else {
+      console.log('Secrets: ', req.webtaskContext.secrets);
+    }
+    next();
+}
+
+app.use(mockWebtaskContext);
+app.use(bodyParser.json());
 
 // These are the rules the /out/token endpoint will use to validate the query string parameters
 var tokenEndpointValidationRules = {
-	query:{
+	body:{
 		grant_type: Joi.string().required(),
 		client_id: Joi.string().required(),
 		code_verifier: Joi.string().required(),
@@ -50,9 +37,17 @@ var tokenEndpointValidationRules = {
 		client_assertion: Joi.string().required(),
 		client_assertion_type: Joi.string().required()
 	}
-}
+};
 
-// Example: 
+var validate = function(rules) {
+	return function(req, res, next) {
+    const result = Joi.validate(req.body, rules.body);
+		if (result.error) return next(result.error);
+		next();
+  };
+};
+
+// Example:
 // 		localhost:8081/oauth/token
 //			?client_id=2ZUIv0DyveQJ1F4JW1ycNLeRyC0YTVE6
 // 			&code=97ToXLLuaQo6DdKu
@@ -60,20 +55,23 @@ var tokenEndpointValidationRules = {
 //	 		&redirect_uri=https://leandro-pelorosso-testing-0.us.webtask.io/auth0-authentication-api-debugger
 //	 		&grant_type=authorization_code
 app.post('/oauth/token', validate(tokenEndpointValidationRules), function (req, res, next) {
-
+	console.log('here');
 	// assertion attributes are being required, so this should always be true
 	// but just in case they changed them to be optional (as originally was)
-	if(req.query.client_assertion && req.query.client_assertion_type){
+  console.log('req.body: ', req.body);
+	if(req.body.client_assertion && req.body.client_assertion_type){
 
-		var client_assertion_type = req.query.client_assertion_type;
-		var client_assertion = req.query.client_assertion;
+		var client_assertion_type = req.body.client_assertion_type;
+		var client_assertion = req.body.client_assertion;
 
 		// validate client assertion type (should match the one on the configuration)
-		if(CLIENT_ASSERTION_TYPE != client_assertion_type){ throw ("Invalid Assertion Type")};
+		console.log('assertion: ', req.webtaskContext.secrets.CLIENT_ASSERTION_TYPE, client_assertion_type);
+		if(req.webtaskContext.secrets.CLIENT_ASSERTION_TYPE != client_assertion_type){
+			throw ("Invalid Assertion Type")};
 
 		// decode client assertion
 		var decoded_assertion = jwt.decode(client_assertion, {complete: true});
-		if(!decoded_assertion) { throw ("Invalid Client Assertion ")};
+		if(!decoded_assertion) { throw ("Invalid Client Assertion "); }
 
 		// get jku and kid from header
 		var jku = decoded_assertion.header.jku;
@@ -90,8 +88,12 @@ app.post('/oauth/token', validate(tokenEndpointValidationRules), function (req, 
 
 			console.log("Using locally defined CERT to verify JWT.");
 
-			var cert = pki.certificateFromPem(CERT);
-			publicKey = pki.publicKeyToPem(cert.publicKey);
+			try {
+				publicKey = Buffer.from(req.webtaskContext.secrets.CERT, 'base64');
+			} catch(e) {
+				console.error('Could not decode: ', e);
+				throw e;
+			}
 
 		} else { // we will use the JWK to verify token
 
@@ -112,14 +114,22 @@ app.post('/oauth/token', validate(tokenEndpointValidationRules), function (req, 
 			}
 		}
 
-		// verify the token, using client id as audience and issuer			
-		jwt.verify(client_assertion, publicKey, { audience: req.query.client_id, issuer: req.query.client_id }, function(err, decoded) {
-			if(err) return next(err);
+		// verify the token, using client id as audience and issuer
+		jwt.verify(client_assertion, publicKey, {
+			audience: 'https://' + req.webtaskContext.secrets.TENANT_DOMAIN,
+			subject: req.body.client_id,
+			issuer: req.body.client_id }, function(err, decoded) {
+			if(err) {
+				console.error('Error verifying: ', err);
+				return next(err);
+      }
 
 			// client assertion is verified, so proceed to exchange code for token.
-			exchangeCode(req.query, function(err, response){
-				if(err) return next(err);
-				console.log(err);
+			exchangeCode(req, function(err, response){
+				if(err) {
+					console.error('Error exchanging code: ', err);
+					return next(err);
+        }
 				console.log(response);
 				res.status(200).json(response);
 			});
@@ -128,9 +138,9 @@ app.post('/oauth/token', validate(tokenEndpointValidationRules), function (req, 
 
 });
 
-
 /** Performs the code exchange calling oauth/token endpoint in Auth0 **/
-function exchangeCode(params, callback){
+function exchangeCode(req, callback){
+	var params = req.body;
 
 	// get parameters from query string
 	var request_body = {
@@ -142,13 +152,11 @@ function exchangeCode(params, callback){
 	};
 
 	// build the request to auth0
-	var options = { 
+	var options = {
 		method: 'POST',
-	  	url: 'https://' + AUTH0_TENANT + '.auth0.com/oauth/token',
-	  	headers: { 'content-type': 'application/json' },
-	  	body: request_body,
-	  	json: true
-	}
+		url: 'https://' + req.webtaskContext.secrets.TENANT_DOMAIN + '/oauth/token',
+		json: request_body
+	};
 
 	// make the request
 	request(options, function (error, response, body) {
@@ -159,17 +167,18 @@ function exchangeCode(params, callback){
 		// if the request was succesfully, build the response
 		var response = {
 		  access_token: body.access_token,
-		  //acr: "string", // TODO: we will ignore acr for now
+		  acr: "https://verified.me/loa/can/auth/standard", // TODO: we will ignore acr for now
 		  expires_in: body.expires_in,
 		  id_token: body.id_token,
 		  refresh_token: body.refresh_token,
 		  token_type: body.token_type
-		}
+		};
 
 		// if we have an access token and scopes are defined
 		if(body.access_token){
 			var decoded = jwt.decode(body.access_token);
-			response.scope = (decoded.scope)? decoded.scope : "";
+			console.log('decoded token: ', decoded);
+			response.scope = (decoded && decoded.scope)? decoded.scope : "";
 		}
 
 		// callback with the response
@@ -186,11 +195,4 @@ app.use(function (err, req, res, next) {
   res.status(500).send({ error: err })
 });
 
-// Create Server
-var server = app.listen(8081, function () {
-
-   var host = server.address().address
-   var port = server.address().port
-
-   console.log("Mediator listening at http://%s:%s", host, port)
-});
+module.exports = app;

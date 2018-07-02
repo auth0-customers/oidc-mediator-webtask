@@ -1,0 +1,17 @@
+{
+  "title": "Auth0 OIDC Mediator",
+  "name": "oidc-mediator-webtask",
+  "version": "1.0.0",
+  "author": "auth0",
+  "useHashName": false,
+  "description": "",
+  "type": "application",
+  "category": "api",
+  "logoUrl": "",
+  "initialUrlPath": "/",
+  "docsUrl": "",
+  "repository": "",
+  "keywords": [
+    "auth0"
+  ]
+}
