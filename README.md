@@ -1,12 +1,36 @@
 # oidc-mediator-webtask
 
-## Sample Call
+## Setup
 ```
-curl -X POST \
-  'http://localhost:8081/oauth/token?client_id=2ZUIv0DyveQJ1F4JW1ycNLeRyC0YTVE6&code=97ToXLLuaQo6DdKu&code_verifier=WZTynD8AYCqOlAzCZCmRvRea6bG5x39y4RJs73HGQ&redirect_uri=https://leandro-pelorosso-testing-0.us.webtask.io/auth0-authentication-api-debugger&grant_type=authorization_code&client_assertion=%27%27&client_assertion_type=%27%27' \
-  -H 'Cache-Control: no-cache' \
-  -H 'Postman-Token: 66ab993f-b74d-43c7-bf17-e3f65108f13c'
-  ```
+npm i
+```
+
+## Setup Auth0
+* Create an application in Auth0 as a Native App
+    * allow callback url: `https://jwt.io`
+* Create an API with an identifier: `api`
+
+## How to test
+* Copy .env.example to .env (or .webtask.env if you are installing as a webtask)
+    * replace values in .env with your tenant, client_id and next generate a certificate to add
+* Generate a certificate
+```
+openssl genrsa -out private.pem 2048
+openssl rsa -in private.pem -outform PEM -pubout -out public.pem
+cat public.pem| base64 | pbcopy # paste the results in the .env or .webtask.env, this is the public key
+```
+* Create PKCE verifier
+```
+node tests/utils/genCodeVerifier.js
+```
+* Keep track of the code verifier and code challenge for the next few steps
+* Copy the authURL and open it in a browser
+* Log in
+* The code will be sent to `https://jwt.io`, you can find it in the URL, save that for the final exchange
+* Perform the code exchange
+```
+node tests/utils/doCodeExchange.js http://localhost:8081 CODE_VERIFIER CODE_FROM_URL
+```
 
 ## Deploying as a Webtask
 To deploy the webtask you should first create a `.webtask.env` file specific to
@@ -21,3 +45,4 @@ following steps.
     ```
     wt create dist/oidc-mediator-webtask.extension.1.0.0.js -p <wt-profile> -n oidc-mediator --secrets .webtask.env
     ```
+1. You can now perform the same test as above, but instead of using `http://localhost:8081`, put the whole webtask URL (e.g. `https://YOUR_WEBTASK_URL/api/run/YOUR_TENANT/oidc-mediator`
